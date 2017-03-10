@@ -1,0 +1,162 @@
+
+####  PBS preamble	####
+
+#PBS -N PBS_timbir_script
+#PBS -M mushfeqr@umich.edu
+#PBS -m ea
+#PBS -j oe
+#PBS -V
+
+#PBS -A shahani_flux
+#PBS -l qos=flux
+#PBS -q flux
+
+
+#PBS -l nodes=1:ppn=24,pmem=5gb
+#PBS -l walltime=144:00:00
+
+
+# to do a param sweep, use #PBS -t 1-5,10,30 and the variable $PBS_ARRAYID
+
+####  End PBS preamble	####
+
+
+if [ -s "$PBS_NODEFILE" ] ; then
+    echo "Running on"
+    cat $PBS_NODEFILE
+fi
+
+if [ -d "$PBS_O_WORKDIR" ] ; then
+    cd $PBS_O_WORKDIR
+    echo "Running from $PBS_O_WORKDIR"
+fi
+
+cd $PBS_O_WORKDIR
+uniq < $PBS_NODEFILE > nodefile
+
+###########################################################################################################
+#  Put your job commands after this line
+echo "
+Start of Output:
+"
+
+
+export PARALLEL=1
+export OMP_NUM_THREADS=24
+
+
+# Paths
+
+TIMBIR_PATH=/scratch/shahani_flux/mushfeqr/timbir/src/reconstruct/std_data/XT_Main # path to TIMBIR executable
+
+DATA_DIR=/scratch/shahani_flux/mushfeqr/yue/
+DATA_PATH=$DATA_DIR/proj_0248_t_10_z_390_409.hdf
+
+RUN_DIR=$DATA_DIR/output/1cores/24/
+
+
+####### Variables #######
+
+CLEAR_RUNDIR=0
+
+PROJ_START=$((1592*0))
+PROJ_NUM=$((1592*1+100))
+Z_START=0
+Z_NUM=20
+X_NUM=2560    # total x is 2560
+SIG_S=0.3
+SIG_T=0.0001
+NUM_RECONS=16 # total number of 3D reconstructions
+
+
+####### End of Variables #######
+
+# Get path to script
+pushd `dirname $0` > /dev/null
+SCRIPTPATH=`pwd`
+SCRIPTNAME=`basename $0`
+popd > /dev/null
+
+# Do something with the path
+echo "The full path to this file is:"
+echo $SCRIPTPATH/$SCRIPTNAME
+
+
+## DIR to run and output
+RUN_DIR=$RUN_DIR/x_num_${X_NUM}_r_${NUM_RECONS}_sig_s_${SIG_S}_sig_t_${SIG_T}_z_num_${Z_NUM}/
+echo 'The output path is:'
+echo $RUN_DIR
+# Clear RUN_DIR
+if [ $CLEAR_RUNDIR -eq 1 ]; then
+    if [ -d $RUN_DIR ]; then
+         rm -rvf $RUN_DIR
+    fi
+fi
+# Make RUN_DIR
+if [ ! -d $RUN_DIR ]; then
+    mkdir -p $RUN_DIR
+fi
+# CD to RUN_DIR
+cd $RUN_DIR
+
+# Copy this script to the run folder
+cp $SCRIPTPATH/$SCRIPTNAME ./
+
+echo 'Sample comment: check nodes ' >comments.txt
+
+uniq < $PBS_NODEFILE > nodefile                 ## TIMBIR will look for nodefile in $RUN_DIR (where XT_Main is running)
+
+
+# Input arguments
+args=(
+    ## Geometric variables
+    --datafile_row0 $Z_START # Starting row in the projection data at which the reconstruction is done.
+    --proj_start $PROJ_START # Starting projection used for reconstruction
+    --proj_num $PROJ_NUM # Total number of 2D projections used for reconstruction.
+    --proj_rows $Z_NUM # Number of rows (or slices) of the projection used for reconstruction. It is the number of detector bins in the axial direction (i.e., axis of rotation).
+        # If the data is downsampled in x (determined by proj_cols), the data will also be downsampled by the same ratio in the z direction. i.e. ratio_t = ratio_r. 
+        # The number of z slices read in from the data will be ratio_t*proj_rows.
+    --proj_cols $X_NUM # Total number of columns in the projection image. Typically, it is the number of detector bins in the cross-axial direction (i.e., perpendicular to axis of rotation). 
+        # The data will be cropped in x to multiples of proj_cols, and then downsampled to nx = proj_cols. Downsample rate: ratio_r = (nx-extras_r)/proj_cols.
+        # The number of pixels cropped out is extras_r = data_dims[2]%proj_cols pixels (extras_r/2 on each side).
+
+	## Scanning parameters
+    --recon_num $NUM_RECONS # Number of reconstruction time samples in one frame.    --vox_wid 0.65 # Side length of a cubic voxel in inverse units of linear attenuation coefficient of the object. 
+        # For example, if units of "vox_wid" is mm, then attenuation coefficient will have units of mm^-1, and vice versa.
+        # Note that attenuation coefficient is what we are trying to reconstruct.
+    --rot_center $((1255)) # Center of rotation of object, in units of detector pixels. 
+        # For example, if center of rotation is exactly at the center of the object, then rot_center = proj_cols/2.
+        # If not, then specify as to which detector column does the center of rotation of the object projects to.
+
+	## Regularization parameters
+    --sig_s $SIG_S # Spatial regularization parameter of the qGGMRF prior model. 'sig_s' has to be varied to achieve the optimum reconstruction quality. Reducing 'sig_s' will make the reconstruction smoother and increasing it will make it sharper but also noisier.
+    --sig_t $SIG_T # Temporal regularization parameter of the qGGMRF prior model. 'sig_t' has to be varied to achieve best quality. Reducing it will increase temporal smoothness which can improve quality. However, excessive smoothing along time might introduce artifacts.
+    --c_s 0.000001 # A parameter of the spatial qGGMRF prior model. It should be fixed to be much lesser (typically 0.01 times) than the ratio of voxel difference over an edge to sig_s. For instance, choose c_s < 0.01*D/sig_s where 'D' is a rough estimate for the maximum change in value of the reconstruction along an edge in space.
+    --c_t 0.000001 # A parameter of the temporal qGGMRF prior model. It should be fixed to be much lesser (typically 0.01 times) than the ratio of voxel difference over an edge to sigma_t. For instance, choose c_t < 0.01*D/sig_t where 'D' is a rough estimate for the maximum change in value of the reconstruction along a temporal edge.
+
+    ## Path
+    --path2data $DATA_PATH # Path to the dataset in HDF format containing the measured data (photon count data). The data must be stored at /exchange/data in uint16 format.  
+
+    ## Others
+    --convg_thresh 1 # Used to determine when the algorithm has converged at each stage of multi-resolution. It is expressed as a percentage (chosen in the range of 0 to 100). If the ratio of the average magnitude of voxel updates to the average voxel value expressed as a percentage is less than "convg_thresh" then the algorithm is assumed to have converged and the algorithm stops.
+    --remove_rings 2 # If specified, it models the detector non-uniformities and reduces the ring artifacts in the reconstruction. '0' means no ring correction. '1' enables ring correction. '2' uses the improved ring correction by enforcing a zero mean constraint on the offset errors. '3' uses a more advanced ring correction by enforcing a zero constraint on the weighted mean of offset errors over overlapping rectangular patches. If used, the ring artifacts in the reconstruction should reduce.
+    --quad_convex # Legal values are '0' and '1'. If '1', then the algorithm uses a convex quadratic forward model. This model does not account for the zinger measurements which causes streak artifacts in the reconstruction. If '0', then the algorithm uses a generalized Huber function which models the effect of zingers. This reduces streak artifacts in the reconstruction. Also, using '1' disables estimation of variance parameter 'sigma' and '0' enables it.
+    # --restart # If the reconstruction gets killed due to any unfortunate reason (like exceeding walltime in a super-computing cluster), use this flag to restart the reconstruction from the beginning of the last run multi-resolution stage. Don't use restart if WRITE_EVERY_ITER is 1.
+    # --huber_delta # The parameter \delta of the generalized Huber function which models the effect of zingers. Legal values are in the range 0 to 1.
+    # --huber_T # The threshold parameter T of the generalized Huber function. All positive values are legal values.
+
+
+    # --path2whites $WHITES_PATH # Path to the dataset in HDF format containing the measured data in the absence of sample (bright field photon count data). The data must be stored at /exchange/data_white in uint16 format. 
+    # --path2darks $DARKS_PATH # Path to the dataset in HDF format containing the measured data in the absence of the X-ray beam (dark field photon count data). The data must be stored at /exchange/data_dark in uint16 format. 
+    # --K 16 # Number of interlaced sub-frames in the data.
+    # --N_theta 1600 # Total number of projections in a frame. 
+    # --r $RECONS_PER_CYCLE # Number of reconstruction time samples in one frame.
+    # --min_acquire_time 0.0049 # In seconds. The minimum time between views. If the time between views is less than 'min_acquire_time', then that the 2nd view is deleted from the list.
+    # --rotation_speed 360 # Rotation speed of the object in degrees per second.
+    # --remove_streaks 1 # (No longer valid) If specified, it models the effect of anamalous measurements (also called zingers). The streak artifacts in the reconstruction should reduce. '0' means no streak correction. '1' reduces the streaks.
+
+)
+
+
+mpirun -machinefile nodefile -n 1 $TIMBIR_PATH "${args[@]}"
+
