@@ -1,0 +1,2 @@
+# change sdXY to disk name from Disks
+sudo ntfsfix /dev/sdXY
