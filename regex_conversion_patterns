@@ -1,0 +1,10 @@
+##change from unittest.Testcase style to plain asserts in Python
+self.assertEqual\((.*),(.*)\)
+self.assertEqual\((.*),\n\s*(.*)\)
+assert($1 == $2)
+
+self.assertLess\((.*),(.*)\)
+assert($1 < $2)
+
+self.assertTrue\((.*)\)
+assert($1)
