@@ -1,4 +1,4 @@
 # nosetest
-nosetests --with-coverage tests/test_x.py
+nosetests -sv --with-coverage tests/test_x.py
 # coverage report
 coverage report -m --include=*/target_dir/*
