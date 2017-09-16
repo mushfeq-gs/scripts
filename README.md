@@ -1,2 +1,2 @@
 # scripts
-linux scripts to make life easier
+linux scripts and other tidbits to make life easier
