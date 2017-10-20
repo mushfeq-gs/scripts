@@ -1,0 +1,3 @@
+#hibernation on Ubuntu
+#unsafe - no login needed on power-up
+sudo pm-hibernate
