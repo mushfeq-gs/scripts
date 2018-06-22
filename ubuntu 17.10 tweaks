@@ -1,6 +1,0 @@
-# corner buttons
-gsettings set org.gnome.desktop.wm.preferences button-layout 'close,maximize,minimize:'
-
-#minimize on click
-export GIO_EXTRA_MODULES=/usr/lib/x86_64-linux-gnu/gio/modules/
-gsettings set org.gnome.shell.extensions.dash-to-dock click-action 'minimize'
