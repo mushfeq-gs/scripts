@@ -1,0 +1,3 @@
+# run from the command line
+# replace the wifi ssid in name
+netsh wlan show profile name=wifi_ssid key=clear
